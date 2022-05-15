@@ -110,7 +110,7 @@ def port_forwarding(input_file):
                 print('\033[92m' + '[-] http:' + ip + ' is not vulnerable for port forwarding')
                 continue
     try:
-        f = open("port_forward_output.txt")
+        f = open('port_forward_output.txt')
         print('\u001b[33m' + '---------------------------\n See port_forward_output.txt file to see hosts vulnerable for port forwarding\n' + '---------------------------')
     except FileNotFoundError:
         print('\u001b[36m' + '---------------------------\n No hosts vulnerable for port forwarding has been found\n' + '---------------------------')
@@ -248,7 +248,7 @@ def parse_locations(locations):
                     scp = service.find('./{urn:schemas-upnp-org:device-1-0}SCPDURL').text
                     if scp[0] != '/':
                         scp = '/' + scp
-                    service_URL = parsed.scheme + "://" + parsed.netloc + scp
+                    service_URL = parsed.scheme + '://' + parsed.netloc + scp
                     print('\t\t=> API: %s' % service_URL)
 
                     # чтение SCP XML
@@ -281,21 +281,21 @@ def parse_locations(locations):
                             scp = service.find('./{urn:schemas-upnp-org:device-1-0}controlURL').text
                             if scp[0] != '/':
                                 scp = '/' + scp
-                            igd_ctr = parsed.scheme + "://" + parsed.netloc + scp
+                            igd_ctr = parsed.scheme + '://' + parsed.netloc + scp
                             # igd_ctr = common_ctr
                             igd_service = common_service
                         elif required_action == 'Browse':
                             scp = service.find('./{urn:schemas-upnp-org:device-1-0}controlURL').text
                             if scp[0] != '/':
                                 scp = '/' + scp
-                            cd_ctr = parsed.scheme + "://" + parsed.netloc + scp
+                            cd_ctr = parsed.scheme + '://' + parsed.netloc + scp
                             # cd_ctr = common_ctr
                             cd_service = common_service
                         elif required_action == 'GetDeviceInfo':
                             scp = service.find('./{urn:schemas-upnp-org:device-1-0}controlURL').text
                             if scp[0] != '/':
                                 scp = '/' + scp
-                            wps_ctr = parsed.scheme + "://" + parsed.netloc + scp
+                            wps_ctr = parsed.scheme + '://' + parsed.netloc + scp
                             # wps_ctr = common_ctr
                             wps_service = common_service
 
@@ -488,7 +488,7 @@ def find_device_info(p_url, p_service):
             elif type == 0x1042:
                 print('\t\tSerial Number: %s' % value)
         except: 
-            print("Failed TLV parsing")
+            print('Failed TLV parsing')
             break
 
 
@@ -498,10 +498,10 @@ def find_device_info(p_url, p_service):
 def main():
     args = get_arguments()
     if args.input == None and args.country == None:
-        exit("Specify the country for scanning, or a file with hosts")
+        exit('Specify the country for scanning, or a file with hosts')
     elif args.input == None and args.country != None:
         if args.output == None:
-            exit("Specify a file to record scan results")
+            exit('Specify a file to record scan results')
         get_vuln_ips(args.country)
         if args.discover != False:
             discover_upnp_locations(args.country + '.txt', args.output)
@@ -509,7 +509,7 @@ def main():
             port_forwarding(args.output)
     elif args.input != None:
         if args.output == None:
-            exit("Specify a file to record scan results")
+            exit('Specify a file to record scan results')
         if args.discover != False:
             #discover_upnp_locations(args.input, args.output)
             locations = set()
