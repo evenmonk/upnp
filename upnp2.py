@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 
 from bs4 import BeautifulSoup
 from argparse import ArgumentParser
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 
 
 ###
@@ -63,11 +63,9 @@ def port_forwarding(input_file):
             ip = line.strip().split(':')[1]
             port = line.strip().split(':')[2].split('/')[0]
             ip_with_port = ip + ':' + port
-            print('000', ip_with_port)
 
             try:
                 soup = BeautifulSoup(requests.get(line.strip(), timeout=1).text, 'lxml')
-                print(111, line.strip())
                 controlurl = soup.find('devicelist').find('devicelist').find('controlurl').get_text()
                 local_IP = soup.find('presentationurl').get_text()[7:18]
                 SOAP_add_action_header = { 'Soapaction' : '"' + 'rn:schemas-upnp-org:services:WANIPConnection:1#AddPortMapping' + '"',
@@ -101,12 +99,12 @@ def port_forwarding(input_file):
                 else:
                     print('\u001b[36m' + '[+] http:' + ip + ' is vulnerable for port forwarding')
                     with open('port_forward_output.txt', "a", encoding="utf-8") as f:
-                        f.write(ip + '\n')
+                        f.write(ip[2:] + '\n')
 
                 resp = requests.post(f"http:{ip_with_port}{controlurl}", \
                         data=payload, headers=SOAP_delete_action_header)                
             except Exception as e:
-                print(e)
+                # print(e)
                 print('\033[92m' + '[-] http:' + ip + ' is not vulnerable for port forwarding')
                 continue
     try:
@@ -246,15 +244,12 @@ def parse_locations(locations):
 
                     # Добавляется символ '/', если его нет в начале SCP
                     scp = service.find('./{urn:schemas-upnp-org:device-1-0}SCPDURL').text
-                    if scp[0] != '/':
-                        scp = '/' + scp
-                    service_URL = parsed.scheme + '://' + parsed.netloc + scp
+                    service_URL = urljoin(parsed.scheme + '://' + parsed.netloc, scp)
                     print('\t\t=> API: %s' % service_URL)
 
                     # чтение SCP XML
-                    #resp = requests.get(service_URL, timeout=2)
                     try:
-                        resp = requests.get(service_URL, timeout=2)
+                        resp = requests.get(service_URL, timeout=1)
                     except requests.exceptions.ConnectionError:
                         print('[!] Could not load %s' % service_URL)
                         continue
@@ -271,7 +266,6 @@ def parse_locations(locations):
                         continue
 
                     actions = service_XML.findall(".//*{urn:schemas-upnp-org:service-1-0}action")
-                    # common_ctr = parsed.scheme + "://" + parsed.netloc + service.find('./{urn:schemas-upnp-org:device-1-0}controlURL').text
                     common_service = service.find('./{urn:schemas-upnp-org:device-1-0}serviceType').text
 
                     for action in actions:
@@ -279,45 +273,30 @@ def parse_locations(locations):
                         print('\t\t\t- ' + required_action)
                         if required_action == 'AddPortMapping':
                             scp = service.find('./{urn:schemas-upnp-org:device-1-0}controlURL').text
-                            if scp[0] != '/':
-                                scp = '/' + scp
-                            igd_ctr = parsed.scheme + '://' + parsed.netloc + scp
-                            # igd_ctr = common_ctr
+                            igd_ctr = service_URL
                             igd_service = common_service
                         elif required_action == 'Browse':
                             scp = service.find('./{urn:schemas-upnp-org:device-1-0}controlURL').text
-                            if scp[0] != '/':
-                                scp = '/' + scp
-                            cd_ctr = parsed.scheme + '://' + parsed.netloc + scp
-                            # cd_ctr = common_ctr
+                            cd_ctr = service_URL
                             cd_service = common_service
                         elif required_action == 'GetDeviceInfo':
                             scp = service.find('./{urn:schemas-upnp-org:device-1-0}controlURL').text
-                            if scp[0] != '/':
-                                scp = '/' + scp
-                            wps_ctr = parsed.scheme + '://' + parsed.netloc + scp
-                            # wps_ctr = common_ctr
+                            wps_ctr = service_URL
                             wps_service = common_service
 
                 if igd_ctr and igd_service:
                     print('\t[+] IGD port mapping available. Looking up current mappings...')
                     print_control_and_service(igd_ctr, igd_service)
-                    # print('\t\t=> URL to IGD control API: %s' %igd_ctr)
-                    # print('\t\t=> Service Type: %s' %igd_service)
-                    # find_port_mappings(igd_ctr, igd_service)
+                    find_port_mappings(igd_ctr, igd_service)
 
                 if cd_ctr and cd_service:
                     print('\t[+] Content browsing available. Looking up base directories...')
                     print_control_and_service(cd_ctr, cd_service)
-                    # print('\t\t=> URL to IGD control API: %s' %cd_ctr)
-                    # print('\t\t=> Service Type: %s' %cd_service)
-                    # print(cd_ctr, cd_service)
                     find_directories(cd_ctr, cd_service) 
 
                 if wps_ctr and wps_service:
                     print('\t[+] M1 available. Looking up device information...')
                     print_control_and_service(wps_ctr, wps_service)
-                    # print(wps_ctr, wps_service)
                     find_device_info(wps_ctr, wps_service)
                 print('---------------------------')
 
@@ -511,12 +490,12 @@ def main():
         if args.output == None:
             exit('Specify a file to record scan results')
         if args.discover != False:
-            #discover_upnp_locations(args.input, args.output)
-            locations = set()
-            with open('aaaaaaa.txt', "r") as f:
-                for x in f:
-                    locations.add(x.strip())
-            parse_locations(locations)
+            discover_upnp_locations(args.input, args.output)
+            # locations = set()
+            # with open('aaaaaaa.txt', "r") as f:
+            #     for x in f:
+            #         locations.add(x.strip())
+            # parse_locations(locations)
         if args.port_forwarding != False:
             port_forwarding(args.output)
 
