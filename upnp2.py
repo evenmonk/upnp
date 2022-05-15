@@ -261,9 +261,11 @@ def parse_locations(locations):
                     except requests.exceptions.ReadTimeout:
                         print('[!] Timeout reading from %s' % service_URL)
                         continue
-
+                    
+                    # В начале некоторых XML-конфигураций умной розетки Belkin WeMo есть нечитаемые символы
+                    belkin_strip = u'^\xef\xbb\xbf'
                     try:
-                        service_XML = ET.fromstring(resp.text)
+                        service_XML = ET.fromstring(re.sub(belkin_strip, '', resp.text))
                     except Exception:
                         print('\t\t\t[!] Failed to parse the response XML')
                         continue
