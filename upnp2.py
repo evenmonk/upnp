@@ -10,6 +10,7 @@ import xml.etree.ElementTree as ET
 
 from bs4 import BeautifulSoup
 from argparse import ArgumentParser
+from ipaddress import ip_address
 from urllib.parse import urlparse, urljoin
 
 
@@ -18,12 +19,23 @@ from urllib.parse import urlparse, urljoin
 ###
 def get_arguments():
     parser = ArgumentParser()
-    parser.add_argument('-i', '--input', type=str, help='File with target hosts for scanning')
-    parser.add_argument('-c', '--country', type=str, help='Country to scan')
-    parser.add_argument('-o', '--output', type=str, help='File with urls to xml configurations')
-    parser.add_argument('-d', '--discover', action='store_true', help='Discover UPnP locations')
-    parser.add_argument('-p', '--port_forwarding', action='store_true', help='Make TCP bind over NAT')
-    # parser.add_argument('-r', '--rogue_ssdp', type=str, help='Create rogue UPNP device on a local network')
+    parser.add_argument('-i', '--input', type=str,
+                        help='File with target hosts for scanning')
+    parser.add_argument('-c', '--country', type=str,
+                        help='Country to scan')
+    parser.add_argument('-o', '--output', type=str,
+                        help='File with urls to xml configurations')
+    parser.add_argument('-d', '--discover', action='store_true',
+                        help='Discover UPnP locations')
+    parser.add_argument('-p', '--port_forwarding', action='store_true',
+                        help='Make TCP bind over NAT')
+    parser.add_argument('-r', '--rogue_ssdp', action='store_true',
+                        help='Create rogue UPNP device on a local network')
+    parser.add_argument('-s', '--smb', type=str, action='store',
+                        help=('IP address of rogue SMB server. The IP address '
+                              'of the passed interface is set by default'))
+    parser.add_argument('interface', type=str, action='store',
+                        help='Network interface used for listening')
     args = parser.parse_args()
     return args
 
@@ -103,8 +115,7 @@ def port_forwarding(input_file):
 
                 resp = requests.post(f"http:{ip_with_port}{controlurl}", \
                         data=payload, headers=SOAP_delete_action_header)                
-            except Exception as e:
-                # print(e)
+            except Exception:
                 print('\033[92m' + '[-] http:' + ip + ' is not vulnerable for port forwarding')
                 continue
     try:
@@ -215,18 +226,20 @@ def parse_locations(locations):
                 print('\t==== XML Attributes ===')
                 try:
                     xml_root = ET.fromstring(resp.text)
+                    # В большинстве случаев root_tag принимает значение {urn:schemas-upnp-org:device-1-0}
+                    root_tag = re.sub('root$', '', xml_root.tag)
                 except Exception:
                     print('\t[!] Failed to parse the response XML of %s' % location + '\n---------------------------')
                     continue
 
-                print_attribute(xml_root, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}deviceType", "Device Type")
-                print_attribute(xml_root, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}friendlyName", "Friendly Name")
-                print_attribute(xml_root, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}manufacturer", "Manufacturer")
-                print_attribute(xml_root, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}manufacturerURL", "Manufacturer URL")
-                print_attribute(xml_root, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}modelDescription", "Model Description")
-                print_attribute(xml_root, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}modelName", "Model Name")
-                print_attribute(xml_root, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}modelNumber", "Model Number")
-                print_attribute(xml_root, "./{urn:schemas-upnp-org:device-1-0}device/{urn:schemas-upnp-org:device-1-0}serialNumber", "Serial Number")
+                print_attribute(xml_root, './' + root_tag + 'device/' + root_tag + 'deviceType', 'Device Type')
+                print_attribute(xml_root, './' + root_tag + 'device/' + root_tag + 'friendlyName', 'Friendly Name')
+                print_attribute(xml_root, './' + root_tag + 'device/' + root_tag + 'manufacturer', 'Manufacturer')
+                print_attribute(xml_root, './' + root_tag + 'device/' + root_tag + 'manufacturerURL', 'Manufacturer URL')
+                print_attribute(xml_root, './' + root_tag + 'device/' + root_tag + 'modelDescription', 'Model Description')
+                print_attribute(xml_root, './' + root_tag + 'device/' + root_tag + 'modelName', 'Model Name')
+                print_attribute(xml_root, './' + root_tag + 'device/' + root_tag + 'modelNumber', 'Model Number')
+                print_attribute(xml_root, './' + root_tag + 'device/' + root_tag + 'serialNumber', 'Serial Number')
 
                 igd_ctr = ''
                 igd_service = ''
@@ -236,14 +249,14 @@ def parse_locations(locations):
                 wps_service = ''
 
                 print('\t-> Services:')
-                services = xml_root.findall(".//*{urn:schemas-upnp-org:device-1-0}serviceList/")
+                services = xml_root.findall('.//*' + root_tag + 'serviceList/')
                 for service in services:
-                    print('\t\t=> Service Type: %s' % service.find('./{urn:schemas-upnp-org:device-1-0}serviceType').text)
-                    print('\t\t=> Control: %s' % service.find('./{urn:schemas-upnp-org:device-1-0}controlURL').text)
-                    print('\t\t=> Events: %s' % service.find('./{urn:schemas-upnp-org:device-1-0}eventSubURL').text)
+                    print('\t\t=> Service Type: %s' % service.find('./' + root_tag + 'serviceType').text)
+                    print('\t\t=> Control: %s' % service.find('./' + root_tag + 'controlURL').text)
+                    print('\t\t=> Events: %s' % service.find('./' + root_tag + 'eventSubURL').text)
 
                     # Добавляется символ '/', если его нет в начале SCP
-                    scp = service.find('./{urn:schemas-upnp-org:device-1-0}SCPDURL').text
+                    scp = service.find('./' + root_tag + 'SCPDURL').text
                     service_URL = urljoin(parsed.scheme + '://' + parsed.netloc, scp)
                     print('\t\t=> API: %s' % service_URL)
 
@@ -266,21 +279,21 @@ def parse_locations(locations):
                         continue
 
                     actions = service_XML.findall(".//*{urn:schemas-upnp-org:service-1-0}action")
-                    common_service = service.find('./{urn:schemas-upnp-org:device-1-0}serviceType').text
+                    common_service = service.find('./' + root_tag + 'serviceType').text
 
                     for action in actions:
                         required_action = action.find('./{urn:schemas-upnp-org:service-1-0}name').text
                         print('\t\t\t- ' + required_action)
                         if required_action == 'AddPortMapping':
-                            scp = service.find('./{urn:schemas-upnp-org:device-1-0}controlURL').text
+                            scp = service.find('./' + root_tag + 'controlURL').text
                             igd_ctr = service_URL
                             igd_service = common_service
                         elif required_action == 'Browse':
-                            scp = service.find('./{urn:schemas-upnp-org:device-1-0}controlURL').text
+                            scp = service.find('./' + root_tag + 'controlURL').text
                             cd_ctr = service_URL
                             cd_service = common_service
                         elif required_action == 'GetDeviceInfo':
-                            scp = service.find('./{urn:schemas-upnp-org:device-1-0}controlURL').text
+                            scp = service.find('./' + root_tag + 'controlURL').text
                             wps_ctr = service_URL
                             wps_service = common_service
 
@@ -467,20 +480,52 @@ def find_device_info(p_url, p_service):
             elif type == 0x1042:
                 print('\t\tSerial Number: %s' % value)
         except: 
-            print('Failed TLV parsing')
+            print('[!] TLV parsing failed')
             break
 
 
 ###
-# Главный метод
+# Метод используется для получения IP-адреса предоставленного интерфейса, 
+# который будет использован для обслуживания файлов XML, а также как IP-адрес SMB сервера, 
+# если он не указан явно.
 ###
+def get_ip(interface):
+    ip_regexp = r'inet (?:addr:)?(.*?) '
+    inet = os.popen('ifconfig ' + interface).read()
+    interface_ip = re.findall(ip_regexp, inet)
+    try:
+        return interface_ip[0]
+    except IndexError:
+        exit('\033[93m' + '[!] Couldn\'t get IP for provided interface. ')
+
+
+###
+# Метод устанавливает IP-адрес SMB-сервера, который будет использован на фишинговой странице. 
+# Скрипт не создает сам SMB-сервер, нужно развернуть собственный, например, с помощью библиотеки Impacket
+###
+def set_smb_server_ip(smb, interface_ip):
+    if smb:
+        if ip_address(smb):
+            smb_server_ip = smb
+        else:
+            exit('\033[93m' + "[!] Invalid IP address for SMB server provided.")
+    else:
+        smb_server_ip = interface_ip
+    return smb_server_ip
+
+
+def create_rogue_ssdp_point(smb_server_ip):
+    print('Selected IP: ', smb_server_ip)
+    pass
+
+
 def main():
     args = get_arguments()
-    if args.input == None and args.country == None:
-        exit('Specify the country for scanning, or a file with hosts')
+    if args.input == None and args.country == None and args.rogue_ssdp == False:
+        exit('[!] Specify the country for scanning, or a file with hosts')
     elif args.input == None and args.country != None:
         if args.output == None:
-            exit('Specify a file to record scan results')
+            exit('[!] Specify a file to record scan results')
         get_vuln_ips(args.country)
         if args.discover != False:
             discover_upnp_locations(args.country + '.txt', args.output)
@@ -488,16 +533,23 @@ def main():
             port_forwarding(args.output)
     elif args.input != None:
         if args.output == None:
-            exit('Specify a file to record scan results')
+            exit('[!] Specify a file to record scan results')
         if args.discover != False:
             discover_upnp_locations(args.input, args.output)
             # locations = set()
             # with open('aaaaaaa.txt', "r") as f:
             #     for x in f:
             #         locations.add(x.strip())
+            # locations = {'http://211.21.193.152:65535/rootDesc.xml'}
             # parse_locations(locations)
         if args.port_forwarding != False:
             port_forwarding(args.output)
+    elif args.rogue_ssdp != False:
+        if args.interface == None:
+            exit('[!] No interface provided')
+        interface_ip = get_ip(args.interface)
+        smb_server_ip = set_smb_server_ip(args.smb, interface_ip)
+        create_rogue_ssdp_point(smb_server_ip)
 
 
 if __name__ == "__main__":
